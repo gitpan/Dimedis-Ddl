@@ -1,0 +1,362 @@
+#!/usr/local/bin/perl
+
+use strict;
+
+use lib "lib";
+
+use DBI;
+use Dimedis::Ddl;
+use Data::Dumper;
+use Getopt::Std;
+
+$| = 1;
+
+my $VERSION = "$Dimedis::Ddl::VERSION";
+
+my $COPYRIGHT = <<__EOT;
+dddl, version $VERSION, Copyright 2001-2002 dimedis GmbH
+__EOT
+
+my $USAGE = <<__EOT;
+Usage: dddl [options]
+
+    -t db-type      Datenbanktyp (z.B. Oracle, mysql, Sybase)
+
+    -d dbi-connect  DBI Connect-String (alternativ zu -t)
+    -u username     Username, wenn DBI Connect-String gegeben
+    -p password     Passwort, wenn DBI Connect-String gegeben
+
+    -f filename     Dimedis::Ddl Konfigurationsdateiname
+
+    -c              Nur die Konfiguration auf Fehler testen
+
+    -o filename     Zieldateiname für SQL-Code bzw. Dimedis::Sql
+                    Type Hash (- für STDOUT)
+
+    -w what         Welcher SQL Code soll ausgegeben werden?
+                    Mögliche Werte sind:
+	  
+	            create_all  	  alles anlegen (Default)
+	            create_tables	  Tabellen anlegen
+	            create_references	  Referenzen anlegen
+	            create_constraints    Constraints anlegen
+	            create_indices	  Indices anlegen
+
+	            drop_all		  alles löschen
+	            drop_tables 	  Tabellen löschen
+	            drop_references	  Referenzen löschen
+	            drop_constraints	  Constraints löschen
+	            drop_indices	  Indices löschen
+
+	            type_hash		  Dimedis::Sql Type Hash
+		    full_type_hash	  vollständiges Type Hash
+
+                    cleanup               Löscht unreferenzierte Daten
+		    			  (braucht Datenbankverbindung)
+
+    -h hints        Zusätzliche Steuerungsparameter im Format:
+                    "name=value, name=value, ..."
+
+Eine ausführliche Dokumentation kann mit "perldoc dddl" angezeigt werden.
+
+__EOT
+
+main: {
+	my %opt;
+	my $opt_ok = getopts ('ct:f:o:w:h:d:u:p:', \%opt);
+	
+	usage() if not $opt_ok or @ARGV;
+	
+	my ($db_type, $config_file, $out_file, $what, $hints,
+	    $dbi_connect, $user, $pass, $check_only) =
+            @opt{'t','f','o','w','h','d','u','p','c'};
+
+	$what     ||= "create_all";
+	$out_file ||= "-";
+
+	usage() if not $config_file or
+		   not ($db_type or $dbi_connect) or
+		   ($dbi_connect and not ($pass and $user));
+
+	my $dbh;
+	if ( $dbi_connect) {
+		$dbh = DBI->connect (
+			$dbi_connect, $user, $pass,
+			{ RaiseError => 1, AutoCommit => 1 },
+		);
+	}
+
+	my $ddl = Dimedis::Ddl->new (
+		dbh	            => $dbh,	    
+		db_type	            => $db_type,    
+		filename            => $config_file,
+		croak_config_errors => 0,
+	);
+
+	if ( $hints ) {
+		foreach my $kv ( split (/\s*,\s*/, $hints) ) {
+			$kv =~ m/(.*?)=(.*)/;
+			$ddl->set_hint ( $1 => $2 );
+		}
+	}
+
+	if ( $what eq 'type_hash' or $what eq 'full_type_hash' ) {
+		$ddl->generate_type_hash ( full => $what eq 'full_type_hash' );
+		$ddl->print_type_hash ( filename => $out_file )
+			if not $ddl->has_errors;
+
+	} elsif ( $what eq 'cleanup' ) {
+		usage() if not $dbh;
+		$ddl->cleanup_database;
+
+	} elsif ( not $check_only ) {
+		$ddl->generate ( what => $what );
+		$ddl->print ( filename => $out_file )
+			if not $ddl->has_errors;
+	}
+
+	$ddl->print_errors if $ddl->has_errors;
+
+	if ( $check_only and not $ddl->has_errors ) {
+		print "Config Ok\n";
+	}
+
+	exit $ddl->has_errors;
+}
+
+sub usage {
+	print $COPYRIGHT,"\n",$USAGE,"\n";
+	exit 1;
+}
+
+__END__
+
+
+=head1 NAME
+
+dddl - Kommandozeilenprogramm für Dimedis::Ddl
+
+=head1 SYNOPSIS
+
+  dddl [options]
+
+    -t db-type      Datenbanktyp (z.B. Oracle, mysql, Sybase)
+
+    -d dbi-connect  DBI Connect-String (alternativ zu -t)
+    -u username     Username, wenn DBI Connect-String gegeben
+    -p password     Passwort, wenn DBI Connect-String gegeben
+
+    -f filename     Dimedis::Ddl Konfigurationsdateiname
+
+    -o filename     Zieldateiname für SQL-Code bzw. Dimedis::Sql
+                    Type Hash (- für STDOUT)
+
+    -w what         Welcher SQL Code soll ausgegeben werden?
+                    Mögliche Werte sind:
+	  
+	            create_all  	  alles anlegen (Default)
+	            create_tables	  Tabellen anlegen
+	            create_references	  Referenzen anlegen
+	            create_constraints    Constraints anlegen
+	            create_indices	  Indices anlegen
+
+	            drop_all		  alles löschen
+	            drop_tables 	  Tabellen löschen
+	            drop_references	  Referenzen löschen
+	            drop_constraints	  Constraints löschen
+	            drop_indices	  Indices löschen
+
+	            type_hash		  Dimedis::Sql Type Hash
+		    full_type_hash	  vollständiges Type Hash
+
+                    cleanup               Löscht unreferenzierte Daten
+		    			  (braucht Datenbankverbindung)
+
+    -h hints        Zusätzliche Steuerungsparameter im Format:
+                    "name=value, name=value, ..."
+
+=head1 DESCRIPTION
+
+Das B<dddl> Kommando ist eine einfache Schnittstelle zum Dimedis::Ddl
+Modul zur datenbankübergreifenden Generierung von DDL Code zur
+Erstellung und Manipulation von Datenbankobjekten.
+
+Das Programm benötigt als Parameter mindestens eine Dimedis::Ddl
+Konfigurationsdatei, den gewünschten Datenbanktyp, sowie den Dateinamen
+für den generierten Code. Hinweise zum Aufbau der Konfigurationsdatei
+gibt die manpage zu Dimedis::Ddl (-> perldoc Dimedis::Ddl).
+
+Statt den Datenbanktyp mit -t anzugeben, kann auch ein DBI Connect
+String mit -d, plus username/password mit -u und -p angegeben werden.
+Der Datenbanktyp wird daraus entsprechend ermittelt.
+
+Per Default wird Code für alle in der Konfigurationsdatei
+beschriebenen Objekte (Tabellen, Indices, Constraints und Referenzen)
+erzeugt, mit dem B<-w> Parameter kann die Ausgabe aber auch auf
+bestimmte Objekte reduziert werden.
+
+Wenn die Konfiguration fehlerhaft ist, werden die Fehlermeldungen
+auf STDERR ausgegeben. In diesem Fall wird kein Code generiert,
+die Konfiguration muß also fehlerfrei sein, eine Teilgenerierung
+ist nicht möglich.
+
+=head1 ZUSÄTZLICHE STEUERUNGSPARAMETER
+
+Mit B<-h> können zusätzliche, auch datenbankspezifische, Parameter
+übergeben werden, im Format:
+
+  "name=value, name=value, ..."
+
+Folgende Parameter können hier angegeben werden:
+
+B<create_oracle_sequence>=B<1>
+    CREATE und DROP SEQUENCE Befehle werden
+    für Oracle beim Tabellen anlegen/löschen
+    mit erzeugt. Default ist hier 0.
+
+=head1 HINWEIS ZU MYSQL UND REFERENZEN
+
+Wenn Referenzen bei einer MySQL verwendet werden sollen, müssen
+die DBI Connect Informationen angegeben werden (mit den Optionen
+-d, -u und -p). Weitere Hinweise zu diesem Thema finden sich in
+der Dimedis::Ddl Manpage.
+
+=head1 ANWENDUNGSFÄLLE
+
+Im wesentlichen gibt es fünf Anwendungsfälle für Dimedis::Ddl
+und den Einsatz des B<dddl> Kommandos:
+
+=over 4
+
+=item B<1. Vollständiges Anlegen einer leeren Datenbank>
+
+Es soll eine neue Datenbank vollständig angelegt werden, inklusive
+aller Indices, Constraints und Referenzen.
+
+=item B<2. Anlegen einer Datenbank mit anschließendem Datenimport>
+
+In diesem Fall werden ebenfalls alle Datenbanktabellen angelegt,
+allerdings ohne Indices und Referenzen, da diese einen anschließenden
+Datenimport behindern würden.
+
+=item B<3. Verändern einer Datenbank>
+
+Existierende Datenbanktabellen sollen verändert bzw. erweitert werden.
+
+=item B<4. Löschen einer Datenbank>
+
+Alle Tabellen inkl. der daran angeknüpften Datenbankobjekte sollen
+gelöscht werden.
+
+=item B<5. Generierung des Dimedis::Sql Type Hashs>
+
+Dimedis::Ddl korrespondiert natürlich direkt mit Dimedis::Sql, d.h.
+das von Dimedis::Sql benötigte Type Hash kann direkt aus der Dimedis::Ddl
+Konfiguration generiert werden.
+
+=back
+
+Es folgt eine Beschreibung dieser fünf Anwendungsfälle, mit Beispielen
+zur Veranschaulichung:
+
+=head2 1. Vollständiges Anlegen einer leeren Datenbank
+
+Dies kann mit einem einzigen B<dddl> Aufruf erledigt werden:
+
+  dddl -t Oracle -f ddl.config -o create_all.sql
+
+Der Default für den B<-w> Parameter ist B<create_all>, damit kann
+dieser hier weggelassen werden und es wird der Code für alle
+Datenbankobjekte ausgegeben. Die so erzeugte .sql Datei kann nun
+z.B. mit dbshell.pl ausgeführt werden:
+
+  dbshell.pl -u foo -p foo dbi:Oracle: < create_all.sql
+
+=head2 2. Anlegen einer Datenbank mit anschließendem Datenimport
+
+In diesem Fall werden zunächst nur die Tabellen der Datenbank angelegt.
+Anschließend erfolgt der Datenimport, und erst danach werden die
+Indices, Referenzen und Constraints hinzugefügt. Damit ergibt sich
+folgender Ablauf (das Beispiel verwendet B<-> als Ausgabedateinamen,
+also Ausgabe auf STDOUT, und schreibt den generierten Code anschließend
+per Pipe direkt in dbshell.pl):
+
+  dddl -t Oracle -f ddl.config -o - -w create_tables      | dbshell.pl [...]
+  dsql_import [...]
+  dddl -t Oracle -f ddl.config -o - -w create_indices     | dbshell.pl [...]
+  dddl -t Oracle -f ddl.config -o - -w create_constraints | dbshell.pl [...]
+  dddl -t Oracle -f ddl.config -o - -w create_references  | dbshell.pl [...]
+
+=head2 3. Verändern einer Datenbank
+
+Der wesentliche Unterschied beim Verändern einer Datenbank steckt
+in der Konfigurationsdatei, in der das B<_alter> Schlüsselwort anzeigt,
+wie die Tabellen modifiziert werden sollen (siehe "perldoc Dimedis::Ddl").
+
+Die Generierung und Ausführung der Befehle erfolgt analog zum
+vollständigen Anlegen von Tabellen:
+
+  dddl -t Oracle -f alter_ddl.config -o alter.sql
+  dbshell.pl -u foo -p foo dbi:Oracle: < alter.sql
+
+Der B<-w> Parameter kann hier auch wieder weggelassen werden, damit
+werden alle in der Datei beschriebenen Aktionen berücksichtigt. Im
+B<_alter> Modus macht es i.A. keinen Sinn, sich nur auf einzelne
+Objektarten zu beschränken, es wäre aber theoretisch möglich.
+
+=head2 4. Löschen einer Datenbank
+
+Dimedis::Ddl kann Code zum Löschen aller Objektarten generieren, i.d.R.
+soll aber immer alles gelöscht werden. Da alle Objektarten von
+Tabellen abhängen, reicht es also die B<DROP TABLE> statements
+generieren zu lassen:
+
+  dddl -t Oracle -f ddl.config -w drop_tables -o drop.sql
+  dbshell.pl -u foo -p foo dbi:Oracle: < drop.sql
+
+Wie gesagt gibt es für die anderen Objektarten auch entsprechende
+B<-w> Parameter. Hiermit könnten z.B. alle Referenzen abgeschaltet
+werden:
+
+  dddl -t Oracle -f ddl.config -w drop_references -o drop_ref.sql
+  dbshell.pl -u foo -p foo dbi:Oracle: < drop_ref.sql
+
+=head2 5. Generierung des Dimedis::Sql Type Hashs
+
+Das Dimedis::Sql Type Hash wird mit einem der folgenden Aufrufe erzeugt:
+
+  dddl -t Oracle -f ddl.config -w type_hash      -o type_hash.conf
+  dddl -t Oracle -f ddl.config -w full_type_hash -o full_type_hash.conf
+  
+Es kann ein beliebiger Datenbanktyp angegeben werden - das Type Hash
+ist ja selbst datenbankunabhängig. Aufgrund der internen Architektur
+von Dimedis::Ddl muß aber stets ein Datenbanktyp angegeben werden.
+
+Die Angabe von -w type_hash bewirkt die Erzeugung eines optimierten
+Type Hashs, das nur die für Dimedis::Sql unbedingt nötigen Spalten
+enthält (Serials, Blobs und Clobs). Mit -w full_type_hash wird
+ein vollständiges Type Hash generiert, wie es für die Benutzung
+des Dimedis::Sql Export/Import Programms nötig ist.
+
+=head2 6. Korrigieren von nicht aufgelösten DELETE CASCADE Referenzen
+
+Wenn eine Datenbank bislang ohne Referenzen betrieben wurde,
+nun sollen diese aber eingeschaltet werden, so müssen zunächst
+die bislang nicht gelöschten Datensätze von DELETE CASCADE Referenzen
+gelöscht werden.
+
+  dddl -d dbi:mysql:xyz -u xyz -p xyz -f ddl.config -w cleanup -o -
+
+=head1 AUTOR
+
+Joern Reder <joern@dimedis.de>
+
+=head1 COPYRIGHT
+
+Copyright (c) 2001-2003 dimedis GmbH, All Rights Reserved
+
+=head1 SEE ALSO
+
+Dimedis::Ddl, Dimedis::Ddl::Config, Dimedis::Sql
+
+=cut

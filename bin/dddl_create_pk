@@ -1,0 +1,165 @@
+#!/usr/local/bin/perl
+
+use strict;
+use lib "lib";
+use Dimedis::Ddl;
+use Data::Dumper;
+
+$| = 1;
+
+my $VERSION = "$Dimedis::Ddl::VERSION";
+
+my $COPYRIGHT = <<__EOT;
+dddl_create_pk, version $VERSION, Copyright 2001-2003 dimedis GmbH
+__EOT
+
+my $USAGE = <<__EOT;
+Usage: dddl_create_pk ddl-config-file
+
+Dieses Script liest eine Dimedis::Ddl Config ein und erzeugt
+daraus eine Dimedis::Ddl Config, die alle Primary Keys per
+ALTER TABLE anlegt. Die Config wird auf STDOUT ausgegeben.
+__EOT
+
+main: {
+	my $filename = shift @ARGV;
+	usage() if not $filename or @ARGV;
+	
+	if ( not -r $filename ) {
+		print "Can't read $filename\n";
+		exit 1;
+	}
+
+	my $config = do $filename;
+
+	print "[\n\n";
+
+	while ( 1 ) {
+		my $table_name   = shift @{$config};
+		my $table_config = shift @{$config};
+		last if not $table_name;
+
+		my @pk_config;
+		while ( 1 ) {
+			my $column        = shift @{$table_config};
+			my $column_config = shift @{$table_config};
+			last if not $column;
+
+			if ( $column eq '_primary_key' ) {
+				print "$table_name => [\n";
+				print "    _alter       => 'add',\n";
+				print "    _primary_key => [\n";
+				my %config = @{$column_config};
+				print "        name     => '$config{name}',\n";
+				print "        on       => '$config{on}'\n";
+				print "    ],\n";
+				print "],\n\n";
+				last;
+			}
+		}
+		
+	}
+
+	print "\n]\n";
+}
+
+sub usage {
+	print $COPYRIGHT,"\n",$USAGE,"\n";
+	exit 1;
+}
+
+sub print_table {
+	my %par = @_;
+	my ($data) = @par{'data'};
+	
+	print "\n", $data->[0], " => [\n";
+
+	my ($with_serial, $with_pk);
+
+	my $name;
+	foreach my $item ( @{$data->[1]} ) {
+		$name = $item->[0];
+
+		if ( $name !~ /^_/ ) {
+			printf ("\t%-18s => ", $name);
+
+			my $data = $item->[1];
+			$data =~ s/\s+$//;
+			$data =~ s/\s+((--|#).*)//;
+			my $comment = $1;
+			$data = qq{"$data",};
+			if ( $comment ) {
+				$comment =~ s/^(--|#)\s*//;
+				printf ("%-35s # %s\n", $data, $comment);
+			} else {
+				print "$data\n";
+			}
+			
+			$with_serial = $name if $data =~ /\bserial\b/i;
+
+		} elsif ( $name =~ /^_primary/ ) {
+			print "\t$name => [\n";
+			foreach my $key ( qw( on name ) ) {
+				printf (
+					qq{\t\t%-6s => "%s",\n},
+					$key, $item->[1]->{$key},
+				);
+			}
+			print "\t],\n";
+			$with_pk = 1;
+
+		} elsif ( $name =~ /^_index/ ) {
+			print "\t$name => [\n";
+			foreach my $key ( qw( name on ) ) {
+				printf (
+					qq{\t\t%-6s => "%s",\n},
+					$key, $item->[1]->{$key},
+				);
+			}
+			print "\t],\n";
+
+		} elsif ( $name =~ /^_constraint/ ) {
+			print "\t$name => [\n";
+			foreach my $key ( qw( name expr unique ) ) {
+				next if $item->[1]->{$key} eq '';
+				printf (
+					qq{\t\t%-6s => "%s",\n},
+					$key, $item->[1]->{$key},
+				);
+			}
+			print "\t],\n";
+
+		} elsif ( $name =~ /^_references/ ) {
+			print "\t$name => [\n";
+			foreach my $key ( qw( name src_col dest_table dest_col delete_cascade ) ) {
+				printf (
+					qq{\t\t%-14s => "%s",\n},
+					$key, $item->[1]->{$key},
+				);
+			}
+			print "\t],\n";
+		} elsif ( $name =~ /^_db_Oracle/ ) {
+
+			print "$item->[1]->{comment}";
+			print "\t$name => [\n";
+			foreach my $key ( qw( table ) ) {
+				printf (
+					qq{\t\t%-8s => "%s",\n},
+					$key, $item->[1]->{$key},
+				);
+			}
+			print "\t],\n";
+		}
+	}
+
+	if ( $with_serial and not $with_pk ) {
+		printf (qq{\t%-18s => {\n\t\tname   => "%s",\n\t\ton => "%s"\n\t},\n},
+			"_primary_key", "pk_".$data->[0], $with_serial);
+	}
+
+	print "],\n\n";
+
+	1;
+}
+
+

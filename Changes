@@ -1,0 +1,278 @@
+$Id: Changes,v 1.37 2003/08/05 12:05:10 joern Exp $
+
+Revision history for Perl extension Dimedis::Ddl.
+
+0.35 05.08.2003 joern
+	- Feature: MySQL Treiber an 4.0.13 angepaßt, die nun ein
+	  DROP FOREIGN KEY unterstützt.
+	  ACHTUNG: diese Dimedis::Ddl Version läuft *nicht* mehr
+	  mit MySQL 4.0.12.
+	- Bugfix: in generierter Type Hash Config wurde die
+	  Type Hash Variable nicht wie früher zurückgegeben.
+	
+0.34 02.06.2003 joern
+	- Bugfix: print_type_hash erzeugte Code zur Erzeugung von
+	  %var, statt $var als Hash Referenz.
+
+0.33 02.06.2003 joern
+	- Feature: print_type_hash( var => $var ) gibt das Type Hash
+	  nun in diesem Format aus: $var{$table} = { ... };
+	  Damit können mehrere Type Hash Dateien ohne weiteres
+	  hintereinander eingelesen werden, und alle Tabellen-
+	  Definitionen landen dabei im selben Hash.
+	- Feature: neue Option -c bei dddl, zur Syntaxprüfung der
+	  angegebenen Config-Datei.
+
+0.32 19.05.2003 joern
+	- Feature: neues Script dddl_create_pk. Erzeugt aus einer
+	  gegebenen Config eine neue Config, die nur die Primary
+	  Keys anlegt.
+
+0.31 16.05.2003 joern
+	- Bugfix: beim altern von PrimaryKey, Constraint und
+	  Reference müssen nun alle Angaben gemacht werden, der
+	  Name allein reicht nicht aus.
+	- Bugfix: bei MySQL ALTER/DROP REFERENCE wurde der
+	  dazugehörige Index auf den lokalen Spalten nicht gelöscht.
+	  Wenn nun versucht wurde, eine gleichbenannte aber auf andere
+	  Spalten bezogene Referenz wieder neu anzulegen, gab es einen
+	  Fehler, weil ein Index unter diesem Namen bereits existierte.
+	- Feature: Achtung, INKOMPATIBLE ÄNDERUNG
+	  Neues Attribut croak_config_errors steuert, ob bei
+	  Konfigurationsfehlern eine Exception geworfen werden
+	  soll oder nicht. Per Default wird nun eine Exception
+	  geworfen, was bislang nicht der Fall war.
+	- Feature: MySQL Support nur noch mit aktiver Datenbank-
+	  verbindung, sonst wird eine Exception geworfen.
+
+0.30 13.05.2003 joern
+	- Feature: neue Ddl Methode ->cleanup(), die anhand der
+	  gegebenen DDL Config die referenzielle Integrität einer
+	  Datenbank prüft und im Falle von DELETE CASCADE Referenzen
+	  Datensätze löscht, die nicht vorhanden sein dürfen.
+	  Damit kann eine MySQL Datenbank bereinigt werden, bevor
+	  für diese References eingeschaltet werden.
+
+0.29 23.04.2003 joern
+	- Bugfix: MySQL: DROP REFERENCE funktioniert nicht, wenn die
+	  Tabelle anderweitig schon geändert wurde (z.B. Spalten
+	  hinzugefügt oder gelöscht). Es wird nun eine Fehlermeldung
+	  produziert, wenn das versucht wird. Für die DROP REFERENCE
+	  Klausel muß eine eigene Config erstellt werden, damit es
+	  funktioniert.
+
+0.28 22.04.2003 joern
+	- Bugfix: Angabe von $dbh und $db_type ist nun gleichzeitig
+	  möglich. Nur wenn kein $db_type gegeben ist, wird dieser
+	  aus dem $dbh extrahiert.
+
+0.27 11.04.2003 joern
+	- Bugfix: für MySQL DROP UNIQUE INDEX wurde kein SQL Code
+	  generiert.
+	- Feature: _type_hash_only bewirkt bei einer Tabellendefinition,
+	  daß für diese Tabelle kein DDL Code generiert wird, sondern
+	  nur ein Type Hash Eintrag.
+	- Feature: voller MySQL Support für Referenzen bzw. FOREIGN
+	  KEY CONSTRAINTS. Bedingt min. MySQL 4.0.12 sowie die
+	  Übergabe eines DBI Handles.
+	- Feature: _references darf auch _reference geschrieben werden.
+	- Feature: experimentelle ->query() Methode, zum Durchsuchen
+	  der aufgrund der DDL Konfiguration intern angelegten Objekte.
+	  Kann z.B. verwendet werden, um 'drop' und 'modify' Reference
+	  Fälle zu ermitteln.
+	- Feature: Type Hash Generierung berücksichtigt auch ALTER
+	  TABLE Fälle.
+	- Feature: das Type Hash kann in zwei Varianten generiert werden.
+	  Per Default sind nur die für Dimedis::Sql unbedingt nötigen
+	  Spalten (serial, blob/clob) enthalten. Alternativ kann
+	  ein vollständiges Type Hash generiert werden, das z.B. für
+	  das Dimedis::Sql Export/Import Programm benötigt wird.
+
+	  ACHTUNG: das ist eine inkompatible Änderung. Bislang wurde
+	  -------  immer ein vollständiges Type Hash generiert!
+
+0.26 08.04.2003 joern
+	- Feature: neue Spaltenoption CASE SENSITIVE. Wirkt sich
+	  derzeit nur bei MySQL aus. Die betroffene Spalte wird
+	  mit der BINARY Option angelegt. D.h. die Sortierung
+	  erfolgt per ASCII (Umlaute werden falsch einsortiert),
+	  dafür werden Indices, Unique Constraints aber case
+	  sensitive.
+
+0.25 25.03.2003 joern
+	- Bugfix: alter => 'drop_table' schrieb hart verdrahtet
+	  ein "drop table" raus, ohne die Driver Table->get_drop_ddl
+	  Methode zu benutzen. Dadurch wurden bei Oracle Sequences
+	  nicht gelöscht.
+
+0.24 12.03.2003 joern
+	- Nutzlose IO::String-Einbindung entfernt.
+
+0.23 12.03.2003 joern
+	- Bugfix: Oracle Sequences wurden im DROP TABLE Fall nicht
+	  mit gelöscht. Nun werden Sequences für jede Tabelle
+	  angelegt und gelöscht, auch wenn die Tabelle keine 'serial'
+	  Spalte haben sollte (nach wie vor nur, wenn auch der
+	  "create_oracle_sequence" Hint gesetzt ist).
+
+0.22 08.01.2003 joern
+	- Bugfix: print_type_hash() gab nicht alles in die Datei
+	  aus, sondern Teile auf STDOUT.
+
+0.21 06.01.2003 joern
+	- print_type_hash(): gibt Type Hash nun in der Reihenfolge
+	  aus, in der die Tabellen in der Konfiguration stehen.
+	- get_type_hash_lref(): neue Methode, die Type Hash als
+	  Liste in der ursprünglichen Reihenfolge zurückgibt
+	  (genauer Aufbau der Liste: siehe Doku).
+	- Bugfix: "use strict" Verletzungen in Config-Dateien landeten
+	  nur auf STDERR, wurden aber nicht in der DDL eigenen
+	  Fehlermeldung wiedergegeben.
+	- Bugfix: wenn '_alter' fehlte, gab es eine Exception und
+	  keine verständliche Ddl eigene Fehlermeldung.
+
+0.20 01.10.2002 joern
+	- Perl 5.004_04 Syntax kompatibel gemacht (keine postfix
+	  for und foreach Statements mehr).
+
+0.19 10.09.2002 joern, gert
+	- bin/dddl_create_config: Spezialfall eingebaut: ni_id
+	  werden immer serial gesetzt. Nur bei it_otp ist es eine
+	  integer spalte.
+	- MySQL Blob Typen nun "LONG", die "MEDIUM" Typen waren
+	  zu klein.
+
+0.18 04.09.2002 joern
+	- Feature: MySQL Referenzen werden zwar immer noch nicht
+	  unterstützt, aber nun werden wenigstens die dazugehörigen
+	  Indices erzeugt, was der Performance zuträglich ist.
+
+0.17 03.09.2002 joern
+	- Bugfix: MySQL Treiber lieferte leere SQL Strings für
+	  References Befehle zurück, statt *gar* keinen SQL
+	  Code zu liefern. Die Ausführung eines Leerstrings
+	  mit DBI gibt eine "emtpy query" Exception.
+
+0.16 27.08.2002 joern
+	- Feature: print_type_hash(). New parameter var which passes
+	  the variable name to be used in the dump.
+
+0.15 26.08.2002 joern, gert
+	- Feature: Ddl::Config->add_directory kann optional
+	  eine Regex übergeben werden, auf die alle zu ladenden
+	  Dateien passen müssen. Verzeichnisse werden automatisch
+	  herausgefiltert. (joern)
+	- Feature: dddl_create_config, bei storage-Klausel: erzeugter
+	  Code besser formatiert. Unterscheidung table- und
+	  lob-storage-Klausel war noetig. Alternativ-Wertepaare
+	  muessen in Klammern gesetzt werden. (gert)
+
+0.14 13.08.2002 joern, gert
+	- Bugfix mysql: eine Spalte mit Index wurde automatisch
+	  NOT NULL gesetzt. Das ist für aktuelle MySQL Versionen
+	  aber nicht mehr erforderlich. (joern)
+	- Bugfix dddl_create_config: cascade wurde fehlerhaft
+	  in ausgegeben, dadurch haben DELETE CASCADEs nicht
+	  funktioniert. (gert)
+
+0.13 15.07.2002 joern
+	- Reference Support für MySQL per Default wieder
+	  abgeschaltet. Über die Umgebungsvariablen
+
+	  * DDL_MYSQL_CREATE_REFERENCES
+	  * DDL_MYSQL_DROP_REFERENCES
+
+	  kann das zu Testzwecken wieder eingeschaltet
+	  werden. Allerdings hat auch die aktuelle MySQL
+	  Version noch Probleme damit, die noch nicht
+	  genau evaluiert sind.
+
+0.12 12.07.2002 joern
+	- Create References Support für MySQL
+	  - ACHTUNG: min. MySQL 3.23.50 erforderlich
+	  - ACHTUNG: drop_references funktioniert auch mit
+	             MySQL 3.23.51 noch nicht !!!
+
+0.11 28.06.2002 joern
+	- Unique Constraints werden nun nicht mehr über einen
+	  Unique Index abgebildet. Das 'unique' Attribut gibt
+	  es also bei _index nicht mehr, stattdessen gibt es
+	  ein 'unique' bei _constraint, das die Spalte(n)
+	  zugeordnet bekommt, die unique sein soll(en).
+
+0.10 27.06.2002 joern
+	- Bugfix: _alter => 'drop', _index => { name => 'foo' }
+	  funktionierte nicht, weil das Attribut 'on' als 
+	  fehlend moniert wurde.
+
+0.09 26.06.2002 joern
+	- _primary_key Definition nun auch Hash mit den Schlüsseln
+	  'name' und 'on'
+	- Unterstützung von alter/drop/add PRIMARY KEY
+	- Erweiterung der Fehlerbehandlung um Methode
+	  get_formatted_errors_sref(), sowie die Möglichkeit ein
+	  FileHandle an print_errors() zu übergeben
+	- Bugfix: KEEP/ALTER NOT NULL/NULL, keep und alter wurden
+	  intern vertauscht
+	- Bei SERIAL darf kein NULL/NOT NULL angegeben werden, weil
+	  SERIALs per Default NOT NULL sind.
+	- Doku: Hinweis zum Löschen von SERIAL Primary Keys (wegen
+	  Problemen by MySQL).
+	- get_ddl_llref() liefert leere Liste, wenn Fehler beim
+	  Code-Generieren aufgetreten sind, da der darin enthaltene
+	  DDL Code fehlerhaft sein kann. Mit ->has_errors muß vorher
+	  abgefragt werden, ob Fehler aufgetreten sind, oder nicht.
+	- an einigen Stellen gab es noch croak() bei fehlerhaften
+	  Konfigurationsparametern, die nun auch in die Liste der
+	  Fehlermeldungen aufgenommen werden.
+
+0.08 18.06.2002 joern
+	- Neues Konzept für datenbankspezifische Erweiterungen:
+	  set_hint() Methode. Hier zunächst genutzt für die
+	  Steuerung ob Oracle CREATE/DROP SEQUENCE erzeugen soll,
+	  oder nicht.
+
+0.07 18.06.2002 joern
+	- Bugfix: "DEFAULT 0" wurde nicht in DDL Statements übernommen.
+	- Bugfix: Endlosschleife wenn _db Angaben vorkamen, die nicht
+	  zur aktuellen Datenbank gehörten.
+	
+0.06 17.06.2002 joern
+	- Bugfix: interner Default Value für DB-spezifische Optionen
+	  war eine Liste statt eines Hashes, was bei Oracle zu
+	  einer Exception führte.
+
+0.05 17.06.2002 joern
+	- print() und print_type_hash() geben per Default auf
+	  STDOUT aus
+	- Bugfix: execute() warf eine Exception
+	- new() kann nun auch ein $dbh zur Typ-Ermittlerung übergeben
+	  werden, statt db_type.
+	- die Konfigurationswerte für _index, _reference, _constraint
+	  und _db_* können nun wahlweise als Hash oder als Liste
+	  übergeben werden. dddl_create_config gibt jetzt Listen aus, da
+	  diese Schreibweise wegen der Einheitlichkeit besser ist.
+
+0.04 07.06.2002 joern
+	- Fehlerbehandlung: kein die() mehr bei Fehlern in der
+	  Konfiguration. Fehler werden gesammelt und können
+	  formatiert ausgegeben werden
+	- dddl gibt Fehler aus und bricht nicht mehr ab
+	- KEEP/ALTER bei NULL/NOT NULL für_alter => 'modify'
+	- dddl_create_config warnt Indices ohne dazugehörige
+	  Tabelle nur, bricht aber nicht mehr ab
+	- ->print_type_hash produziert nun anonyme Hash-Referenz
+	- Dokumentation angepaßt
+
+0.03 29.05.2002 joern
+	- dddl_create_config erweitert um normale Indices
+
+0.02 16.05.2002 joern
+	- kleinere Korrekturen an der Dokumentation
+	- Umbenennung $ddl->get_type_hash nach $ddl->get_type_hash_ref
+
+0.01 13.05.2002 joern
+	- erste Release mit Oracle, MySQL und MS-SQL Support
+	  (Sybase ungetestet)
+
+

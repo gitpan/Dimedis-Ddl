@@ -1,0 +1,554 @@
+#!/usr/dim/bin/perl
+
+use strict;
+
+main: {
+	my $convert = read_sql();
+	
+	$convert->create_config;
+	$convert->dump_config;
+}
+
+sub read_sql {
+	my $state = '';
+	my $old_state = '';
+
+	my $convert = Dimedis::Ddl::Convert->new();
+
+	my $line;
+	my $data = "";
+
+	while (<STDIN>) {
+		$line = $_;
+
+		# Neuen Zustand ermitteln
+		
+		# Table State nur bei ); verlassen
+		if ( $state eq 'table' and $line !~ /\)\s*;\s*$/ ) {
+			$data .= $line if $line !~ /^(--|#)/;
+			next;
+		}
+
+		if ( $state eq 'table' or $state eq 'index' and
+		     $line =~ /\);\s*$/ ) {
+			$data .= $line;
+			$state = 'space';
+			$line = "";
+
+		} elsif ( $line =~ m/^(--|#)/ ) {
+			$state = "comment";
+
+		} elsif ( $line =~ m/^CREATE\s+TABLE/i ) {
+			$state = "table";
+
+		} elsif ( $line =~ m/^CREATE\s+INDEX/i )  {
+			if ( $line =~ /\)\s*;\s*$/ ) {
+				# Zustandswechsel!
+				if ( $data ne '' ) {
+					$convert->add_block (
+						data => $data,
+						type => $state
+					);
+				}
+				# Neuen Block beginnen, weil "create index"
+				# Zeile in sich abgeschlossen (komplett) ist.
+				$data = $line;
+				$line = "";
+				$state     = "space"; # Dieser Zustand ist dummy
+				$old_state = "index";
+			} else {
+				$state     = "index";
+			}
+		}
+
+		# Zustandswechsel?
+		if ( $state ne $old_state and $data ) {
+			$convert->add_block (
+				data => $data,
+				type => $old_state
+			);
+			$data = "";
+		}
+		
+		$old_state = $state;
+
+		$data .= $line;
+	}
+	
+	return $convert;
+}
+
+package Dimedis::Ddl::Convert;
+
+use Data::Dumper;
+$Data::Dumper::Indent = 1;
+
+use Carp;
+
+sub blocks			{ shift->{blocks}			}
+sub config			{ shift->{config}			}
+
+sub new {
+	my $class = shift;
+	
+	my $self = bless {
+		blocks => [],
+		config => [],
+	}, $class;
+	
+	return $self;
+}
+
+sub add_block {
+	my $self = shift;
+	my %par = @_;
+	my ($data, $type) = @par{'data','type'};
+	
+	return if $type eq 'space';
+
+	push @{$self->blocks}, {
+		type => $type,
+		data => $data,
+	};
+	
+	1;
+}
+
+sub create_config {
+	my $self = shift;
+	
+	foreach my $block ( @{$self->blocks} ) {
+		if ( $block->{type} eq 'table' ) {
+			push @{$self->config}, $self->parse_create_table (
+				sql => $block->{data}
+			);
+		} elsif ( $block->{type} eq 'comment' ) {
+			push @{$self->config}, {
+				type    => 'comment',
+				data    => $block->{data},
+			};
+		} elsif ( $block->{type} eq 'index' ) {
+			$self->parse_create_index (
+				sql => $block->{data}
+			);
+		}
+	}
+}
+
+sub dump_config {
+	my $self = shift;
+	
+	print "[\n\n";
+	
+	foreach my $item ( @{$self->config} ) {
+		if ( $item->{type} eq 'comment' ) {
+			$self->print_comment ( data => $item->{data} );
+
+		} elsif ( $item->{type} eq 'table' ) {
+			$self->print_table ( data => $item->{data} );
+		}
+	}
+	
+	print "\n\n]\n";
+	
+	1;
+}
+
+sub print_comment {
+	my $self = shift;
+	my %par = @_;
+	my ($data) = @par{'data'};
+	
+	$data =~ s/^--/#/gm;
+
+	print $data;
+	
+	1;
+}
+
+sub print_table {
+	my $self = shift;
+	my %par = @_;
+	my ($data) = @par{'data'};
+	
+	print "\n", $data->[0], " => [\n";
+
+	my ($with_serial, $with_pk);
+
+	my $name;
+	foreach my $item ( @{$data->[1]} ) {
+		$name = $item->[0];
+
+		if ( $name !~ /^_/ ) {
+			printf ("\t%-18s => ", $name);
+
+			my $data = $item->[1];
+			$data =~ s/\s+$//;
+			$data =~ s/\s+((--|#).*)//;
+			my $comment = $1;
+			$data = qq{"$data",};
+			if ( $comment ) {
+				$comment =~ s/^(--|#)\s*//;
+				printf ("%-35s # %s\n", $data, $comment);
+			} else {
+				print "$data\n";
+			}
+			
+			$with_serial = $name if $data =~ /\bserial\b/i;
+
+		} elsif ( $name =~ /^_primary/ ) {
+			print "\t$name => [\n";
+			foreach my $key ( qw( on name ) ) {
+				printf (
+					qq{\t\t%-6s => "%s",\n},
+					$key, $item->[1]->{$key},
+				);
+			}
+			print "\t],\n";
+			$with_pk = 1;
+
+		} elsif ( $name =~ /^_index/ ) {
+			print "\t$name => [\n";
+			foreach my $key ( qw( name on ) ) {
+				printf (
+					qq{\t\t%-6s => "%s",\n},
+					$key, $item->[1]->{$key},
+				);
+			}
+			print "\t],\n";
+
+		} elsif ( $name =~ /^_constraint/ ) {
+			print "\t$name => [\n";
+			foreach my $key ( qw( name expr unique ) ) {
+				next if $item->[1]->{$key} eq '';
+				printf (
+					qq{\t\t%-6s => "%s",\n},
+					$key, $item->[1]->{$key},
+				);
+			}
+			print "\t],\n";
+
+		} elsif ( $name =~ /^_references/ ) {
+			print "\t$name => [\n";
+			foreach my $key ( qw( name src_col dest_table dest_col delete_cascade ) ) {
+				printf (
+					qq{\t\t%-14s => "%s",\n},
+					$key, $item->[1]->{$key},
+				);
+			}
+			print "\t],\n";
+		} elsif ( $name =~ /^_db_Oracle/ ) {
+
+			print "$item->[1]->{comment}";
+			print "\t$name => [\n";
+			foreach my $key ( qw( table ) ) {
+				printf (
+					qq{\t\t%-8s => "%s",\n},
+					$key, $item->[1]->{$key},
+				);
+			}
+			print "\t],\n";
+		}
+	}
+
+	if ( $with_serial and not $with_pk ) {
+		printf (qq{\t%-18s => {\n\t\tname   => "%s",\n\t\ton => "%s"\n\t},\n},
+			"_primary_key", "pk_".$data->[0], $with_serial);
+	}
+
+	print "],\n\n";
+
+	1;
+}
+
+sub parse_create_table {
+	my $self = shift;
+	my %par = @_;
+	my ($sql) = @par{'sql'};
+	
+	$sql =~ s/^\s+//;
+	
+	my $state = "start";
+
+	my $name;
+	my @result;
+	
+	my $line;
+	my $storage;
+	my $storage_comment;
+	while ( $sql =~ m/^\s*(.*)/gm ) {
+		$line = $1;
+		$line =~ s/^\s+//;
+		next if $line =~ /^(--|#)/;
+
+		if ( $line =~ /^\)\;/ ) {
+			$storage .= ")" if $state eq 'storage';
+			$state = 'end';
+			next;
+		}
+
+		if ( $state eq 'end' ) {
+			die "data found after end of create table statement\nsql=\n$sql";
+		}
+
+		if ( $state eq 'start' ) {
+			($name) = ( $line =~ /create\s+table\s+(\w+)/i );
+			die "can't find table name in sql:\nline='$line'\nsql=\n$sql" if not $name;
+			$state = "column";
+			next;
+		}
+		if ( $state eq 'column' ) {
+			if ( $line =~ /^\)/ ) {
+				$state = 'storage';
+				next;
+			}
+			if ( $line =~ /^constraint/i ) {
+				$state = 'constraint';
+			} else {
+				if ( $line =~ /^(--|#)/ ) {
+					# überhängender Kommentar. An letzte Spalte
+					# anhängen.
+					$result[@result-1]->[1] .= "\n$line";
+					next;
+				}
+				
+				my $com;
+				if ( $line =~ s/((--|#).*)$// ) {
+					$com = $1;
+				}
+				
+				my $matched = $line =~ /(\w+)\s+(.+)/;
+				my ($col, $def) = ($1, $2);
+				die "can't parse column: $line" if not $matched;
+
+				$def =~ s/\s*,\s*$//;
+				$self->parse_column (
+					result_lref => \@result,
+					column      => $col,
+					definition  => $def,
+					comment     => $com,
+					table       => $name,
+				);
+			}
+		}
+		if ( $state eq 'constraint' ) {
+			if ( $line =~ /^\)/ ) {
+				$state = 'storage';
+				next;
+			}
+			$line =~ /^(.*)((--|#).*)?/;
+
+			$self->parse_constraint (
+				result_lref => \@result,
+				line  	    => $1,
+				comment     => $2,
+				sql         => $sql,
+			);
+		}
+		if ( $state eq 'storage' ) {
+			if ( $line =~ /(--|#)\s*(.*)/ ) {
+				$storage_comment .= "\t# --$2\n";
+				$line =~ s/(--|#).*//;
+			}
+			$storage .= "$line\n";
+			if ( $storage =~ /\);$/ ) {
+				$storage =~ s/\;$//;
+				$state = 'end';
+			}
+		}
+	}
+	
+	if ( $storage ) {
+		$storage =~ s/\n$//;
+		
+		#---- Weil es mehrere storage-Klauseln geben kann,
+		#---- naemlich fuer mehrere Spalten jeweils eine,
+		#---- muss man den Namen der Spalte auch noch
+		#---- beruecksichtigen. Da in den @it-Tabellen bisher
+		#---- nur max. eine Storage-Klausel pro Tabelle vorkommt,
+		#---- suche ich einfach nur den ersten vorkommenden
+		#---- Spaltennamen raus
+		my ($col_name) = $storage =~ m/lob\s*\(\s*(.*?)\s*\)/is;
+
+                #---- Zur Kontrolle die Storage-Klausel ausgeben, wenn
+		#---- die Spalte nicht ermittelt werden konnte.
+		#---- Es wird dann angenommen, dass es sich nicht um eine
+		#---- LOB-Storage-, sondern normale Table-Storage-Klausel handelt.
+                print STDERR "Could not determine column name in storage clause:\n$storage\n"
+		  if $col_name eq '';
+		  
+		$col_name .= '__' if $col_name ne '';
+		
+		#---- Ersetzen der initial und next Werte durch
+		#---- storage::table_name__initial bzw. __next
+		#---- || OriginalWert:
+		$storage =~ s/(storage\s*\(.*?(initial)\s+)([0-9KM]+)/"\n\t\t\t$1\". \(\$storage::${name}__${col_name}". lc($2) ." || '$3'\)\n\t\t\t.\""/ies;
+		
+		$storage =~ s/(storage\s*\(.*?(next)\s+)([0-9KM]+)/"$1\". \(\$storage::${name}__${col_name}". lc($2) ." || '$3'\)\n\t\t\t.\""/ies;
+
+		#---- Noch ein bisschen formatieren, damit es schoener aussieht.
+		#---- An Stelle "|" in "storage (|initial" einen Umbruch setzen.
+		$storage =~ s/storage\s*\(\s*initial/"storage \(\n\t\t\tinitial"/eis;
+		
+		#---- Folgendes umformatieren:
+		#----		table    => "lob (nc_clob) store as 				
+		#----(
+		#----			storage (initial
+		#---- wird umformatiert in:
+		#---- 		table    => "lob (nc_clob) store as (
+		#----			storage (initial
+		$storage =~ s/store\s+as\s*\(\s*\n/"store as \(\n"/eis;
+		
+		push @result, [
+			"_db_Oracle", {
+				table => $storage,
+				comment => $storage_comment,
+			},
+		];
+	}
+	
+	die "end of sql statement not reached\nsql=\n$sql" if $state ne 'end';
+	
+	return { type => 'table', data => [ $name, \@result ] };
+}
+
+sub parse_column {
+	my $self = shift;
+	my %par = @_;
+	my  ($result_lref, $column, $definition, $comment, $table) =
+	@par{'result_lref','column','definition','comment','table'};
+	
+	$column = lc($column);
+
+	$definition =~ s/varchar2/VARCHAR/ig;
+	$definition =~ s/date/NATIVE_DATE/i;
+	$definition =~ s/smallint/INTEGER/i;
+	$definition =~ s/number/NUMERIC/i;
+
+	if ( $column eq 'ni_id' ) {
+		if ( $table eq 'it_otp' ) {
+			$definition = "INTEGER";
+		} else {
+			$definition = "SERIAL";
+		}
+	}
+	
+	if ( $definition =~ s/primary\s+key//i ) {
+		push @{$result_lref}, [
+			"_primary_key", { 
+				on     => $column,
+				name   => "pk_$table",
+			}
+		];
+	}
+	
+	if ( $definition =~ s/unique//i ) {
+		push @{$result_lref}, [
+			"_constraint", {
+				name   => "un_".$column,
+				unique => $column,
+			}
+		];
+	}
+
+	push @{$result_lref}, [ $column, "$definition\t$comment" ];
+	
+	1;
+}
+
+sub parse_constraint {
+	my $self = shift;
+	my %par = @_;
+	my  ($result_lref, $line, $comment, $sql) =
+	@par{'result_lref','line','comment','sql'};
+	
+	$line =~ s/^,\s*//;
+	
+	if ( $line =~ /^constraint\s+(\w+)\s+primary\s+key\s*\(([^)]+)\)\s*/i ) {
+		push @{$result_lref}, [ "_primary_key", { name => $1, on => $2 } ];
+
+	} elsif ( $line =~ /^constraint\s+(\w+)\s+unique\s*\(([^)]+)\)\s*/i ) {
+		push @{$result_lref}, [
+			"_constraint", {
+				name   => $1,
+				unique => $2,
+			}
+		];
+	
+	} elsif ( $line =~ /^constraint\s+(\w+)\s+check\s*(.*)$/i ) {
+		my $name = $1;
+		my $expr = $2;
+		$expr =~ s/\(//;
+		$expr =~ s/,\s*$//;
+		$expr =~ s/\)\s*$//;
+		push @{$result_lref}, [
+			"_constraint", {
+				name   => $name,
+				expr   => $expr,
+			}
+		];
+
+	} elsif ( $line =~ /^constraint\s+(\w+)\s+foreign\s+key\s*\(([^)]+)\)\s*references\s*(\w+)\s*(\(([^)]+)\))?(\s*on\s+delete\s+cascade)?/i ) {
+#					  $1                        $2                       $3      $4 $5         $6  
+		push @{$result_lref}, [
+			"_references", {
+				name    => $1,
+				src_col => $2,
+				dest_table => $3,
+				dest_col => ($5 || $2),
+				delete_cascade  => ($6 ne '' ? 1 : 0),
+			}
+		];
+		
+	} elsif ( $line =~ /^(--|#)/ ) {
+	} else {
+		die "unknown constraint: $line\nsql=\n$sql";
+	}
+	
+	1;
+}
+
+sub parse_create_index {
+	my $self = shift;
+	my %par = @_;
+	my ($sql) = @par{'sql'};
+
+	return if $sql =~ /ctxsys/;
+	return if $sql =~ /^#/;
+
+	my ($unique, $name, $table, $on) =
+		$sql =~ /create\s+(unique\s+)?index\s+(\w+)\s+on\s+(\w+)\s*\(([^)]+)\)/is;
+
+	$unique = $unique ? 1 : 0;
+
+	my $table_found;
+	foreach my $item ( @{$self->config} ) {
+		if ( $item->{type} eq 'table' and $item->{data}->[0] eq $table ) {
+			if ( $unique ) {
+				push @{$item->{data}->[1]}, [
+					"_constraint", {
+						name   => $name,
+						unique => $on,
+					},
+				];
+			} else {
+				push @{$item->{data}->[1]}, [
+					"_index", {
+						name   => $name,
+						on     => $on,
+						unique => $unique,
+					},
+				];
+			}
+			$table_found = 1;
+			last;
+		}
+	}
+
+	warn "Index '$name' needs table '$table', which is missing!"
+		if not $table_found;
+	
+	1;
+}
+
+1;

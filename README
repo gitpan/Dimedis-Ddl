@@ -1,0 +1,81 @@
+NAME
+    Dimedis::Ddl - Database Independent DDL Layer
+
+DESCRIPTION
+    This module allows to create database independent applications
+    with Perl, not only on the data transport layer, as provided by
+    DBI, but also on the DDL layer.
+    
+    You define your data model using a simple database independent
+    notation, which is in fact a well formed Perl data structure.
+    
+    Dimedis::Ddl reads this data model description and creates
+    the DDL code for a specific RDBMS which can be executed using
+    DBI. It also generates a simplified data model description,
+    which can be used by Dimedis::Sql to operate in a database
+    independent way at runtime. Refer to the manpage of Dimedis::Sql
+    for details.
+
+    Dimedis::Ddl currently supports the following RDBMS:
+    
+      * Oracle
+      * MySQL (>= 4.0.13)
+      * Microsoft MS-SQL
+      * Sybase Adaptive Server
+
+    Support for other RDBMS can be added easily by implementing
+    corresponding Dimedis::DdlDriver:: modules.
+
+USING Dimedis::Ddl
+
+    Dimedis::Ddl has two interfaces:
+    
+      * An object oriented API, which enables you to put
+        Dimedis::Ddl support straight into your application.
+	
+      * The dddl command line program, which takes the data model
+        description from a file and generates the DDL code for the
+	RDMBS of your choice. This is for easy integration in shell
+	scripts and such.
+
+INSTALLING Dimedis::Ddl
+    perl Makefile.PL
+    make
+    make test
+    make install
+
+DOCUMENTATION
+    Currently the documentation of this module is available in
+    German only. There are several manpages:
+    
+      Dimedis::Ddl::Config
+        This manpage describes the Perl data structure which
+	defines your data model.
+
+      dddl
+        This manpage describes the command line tool dddl.
+
+      Dimedis::Ddl
+        This manpage describes the Dimedis::Ddl API. You need to
+	read this only if you plan to add native Dimedis::Ddl
+	support to your application at Perl level.
+
+NOTE
+    The module name Dimedis::Ddl is subject to change, because
+    having the company's name in the module's namespace isn't
+    a good idea for publically available modules. Namespace
+    suggestions are welcome, please send them to the author.
+
+AUTHOR
+    Joern Reder <joern AT dimedis.de>
+
+COPYRIGHT
+    Copyright (C) 1999-2003 by dimedis GmbH, 50672 Koeln, Germany
+
+    All Rights Reserved.
+
+    This library is free software; you can redistribute it and/or
+    modify it under the same terms as Perl itself.
+
+SEE ALSO
+    DBI, Dimedis::Sql

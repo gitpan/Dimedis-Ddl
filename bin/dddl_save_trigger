@@ -1,0 +1,39 @@
+#!/usr/local/bin/perl
+
+use strict;
+use File::Basename;
+use lib 'lib';
+use Dimedis::Ddl;
+
+$| = 1;
+
+main: {
+	my $config_file = shift @ARGV;
+	my $config_dir  = dirname($config_file);
+	my @files = <$config_dir/*.cipp-config>;
+
+	$config_dir =~ s!/[^/]+$!!;
+	my $type_hash_file = "$config_dir/general/all_tables.cipp-config";
+	
+	print "Erstelle Dimedis::Sql Type Hash\n";
+	print "-------------------------------\n";
+	print "  Quelldateien:\n";
+	print "     ", join ("\n      ",@files), "\n";
+
+	my $config = Dimedis::Ddl::Config->new;
+	$config->add_file ( filename => $_ ) for @files;
+
+	my $ddl = Dimedis::Ddl->new (
+		db_type => "mysql",
+		config  => $config,
+	);
+	
+	print "\n  Zieldatei:\n";
+	print "    $type_hash_file\n\n";
+	
+	$ddl->generate_type_hash;
+
+	$ddl->print_type_hash (
+		filename => q[| perl -pe 's/^\{/\$sql::type_hash_ref = {/' > ].$type_hash_file
+	);
+}
