@@ -20,7 +20,8 @@ __EOT
 my $USAGE = <<__EOT;
 Usage: dddl [options]
 
-    -t db-type      Datenbanktyp (z.B. Oracle, mysql, Sybase)
+    -t db-type      Datenbanktyp (z.B. Oracle, mysql, Sybase),
+    		    Default: Oracle
 
     -d dbi-connect  DBI Connect-String (alternativ zu -t)
     -u username     Username, wenn DBI Connect-String gegeben
@@ -80,6 +81,7 @@ main: {
 
 	my $dbh;
 	if ( $dbi_connect) {
+		$db_type = "";
 		$dbh = DBI->connect (
 			$dbi_connect, $user, $pass,
 			{ RaiseError => 1, AutoCommit => 1 },

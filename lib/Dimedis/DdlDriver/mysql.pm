@@ -314,7 +314,8 @@ sub get_drop_ddl {
 			table   => $self->get_table->get_name,
 			column  => $self->get_src_col,
 			message => "DROP REFERENCE impossible for references ".
-				   "created in the same DDL configuration",
+				   "created in the same DDL configuration ".
+				   "(or the reference simply does not exist)",
 		);
 		return;
 	}
@@ -343,7 +344,7 @@ sub get_drop_ddl {
 				->{$self->get_dest_table}
 				->{$self->get_dest_col};
 	if ( $dest_index =~ /^d3l/ ) {
-		push @sql, "DROP INDEX $dest_index ON $table";
+		push @sql, "DROP INDEX $dest_index ON ".$self->get_dest_table;
 		$schema->drop_index (
 			reference    => $self,
 			ref_idx_type => "dest",
@@ -538,7 +539,7 @@ sub drop_index {
 		            ->{$reference->get_src_col};
 	} elsif ( $reference and $ref_idx_type eq 'dest' ) {
 		delete $self->get_index_by_key
-		       	    ->{$reference->get_dest_table->get_name}
+		       	    ->{$reference->get_name}
 		            ->{$reference->get_dest_col};
 	}
 

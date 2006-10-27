@@ -43,10 +43,13 @@ sub add_file {
 	close $fh;
 	
 	# Catch STDERR, because "use strict" violations are not added to $@
-	open (ORIG_STDERR, ">&STDERR");
-	open (FETCH_STDERR, "+>/tmp/dddl-config-stderr.$$");
+	open (ORIG_STDERR, ">&STDERR")
+		or die "can't dup STDERR";
+	open (FETCH_STDERR, "+>/tmp/dddl-config-stderr.$$")
+		or die "can't write /tmp/dddl-config-stderr.$$";
 	unlink ("/tmp/dddl-config-stderr.$$");
-	open (STDERR, ">&FETCH_STDERR") or die "can't dup STDERR to FETCH_STDERR: $!";
+	open (STDERR, ">&FETCH_STDERR")
+		or die "can't dup STDERR to FETCH_STDERR: $!";
 	
 	# Eval data
 	my $data = eval $content;

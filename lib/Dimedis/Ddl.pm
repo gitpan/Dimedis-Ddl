@@ -1,6 +1,6 @@
 package Dimedis::Ddl;
 
-$VERSION = "0.35";
+$VERSION = "0.37";
 
 use Carp;
 use strict;
@@ -393,11 +393,16 @@ sub generate_type_hash {
 			# existent table is altered
 			foreach my $case ( @{$table->get_alter_cases} ) {
 				next if not $case->isa ("Dimedis::Ddl::Column");
+				$type_href->{$table->get_name} ||= {};
 				$table->alter_type_hash (
 					full      => $full,
 					column    => $case,
 					type_href => $type_href->{$table->get_name},
 				);
+				push @{$type_href_lref}, {
+					name  => $table->get_name,
+					hash  => $type_href->{$table->get_name},
+				};
 			}
 		}
 	}

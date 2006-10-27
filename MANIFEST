@@ -19,3 +19,4 @@ Makefile.PL
 README
 Changes
 test.pl
+META.yml                                 Module meta-data (added by MakeMaker)

@@ -1,6 +1,15 @@
-$Id: Changes,v 1.37 2003/08/05 12:05:10 joern Exp $
+$Id: Changes,v 1.39 2005/02/22 16:53:46 cvsinst Exp $
 
 Revision history for Perl extension Dimedis::Ddl.
+
+0.38 22.02.2005 joern
+	- Bugfixes: dddl config Test funktionierte nicht; MySQL
+	  hatte Fehler beim Index droppen.
+
+0.36 11.02.2005 joern
+	- Bugfix: Dimedis::DdlDriver::mysql-drop_index();
+	  Fehlerhafter Zugriff auf interne Datenstruktur beim
+	  Löschen von Referenz-Indices
 
 0.35 05.08.2003 joern
 	- Feature: MySQL Treiber an 4.0.13 angepaßt, die nun ein
